@@ -1,5 +1,7 @@
 ﻿using Microsoft.AspNetCore.SignalR;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace ChatService.Hubs
@@ -13,6 +15,19 @@ namespace ChatService.Hubs
         {
             _botUser = "SylasBot";
             _connections = connections;
+        }
+
+        public override Task OnDisconnectedAsync(Exception exception)
+        {
+            if(_connections.TryGetValue(Context.ConnectionId, out UserConnection userConnection))
+            {
+                _connections.Remove(Context.ConnectionId);
+                Clients.Group(userConnection.Room)
+                    .SendAsync("RecieveMessage", _botUser, $"{userConnection.User} salió");
+
+                SendConnectedUsers(userConnection.Room);
+            }
+            return base.OnDisconnectedAsync(exception);
         }
 
         public async Task SendMessage(string message)
@@ -31,7 +46,16 @@ namespace ChatService.Hubs
             _connections[Context.ConnectionId] = userConnection;
 
             await Clients.Group(userConnection.Room).SendAsync("RecieveMessage", _botUser,
-                $"{userConnection.User} has joined {userConnection.Room}");
+                $"{userConnection.User} se ha unido a {userConnection.Room}");
+
+            await SendConnectedUsers(userConnection.Room);
+        }
+
+        public Task SendConnectedUsers(string room)
+        {
+            var users = _connections.Values.Where(c => c.Room == room).Select(c => c.User);
+
+            return Clients.Group(room).SendAsync("UsersInRoom", users);
         }
     }
 }
